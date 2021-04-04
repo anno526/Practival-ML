@@ -1,0 +1,130 @@
+---
+title: "Practical ML project"
+author: "Haichen"
+date: "4/2/2021"
+output: html_document
+---
+
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement. a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+Six young healthy participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+* Class A - exactly according to the specification
+* Class B - throwing the elbows to the front
+* Class C - lifting the dumbbell only halfway
+* Class D - lowering the dumbbell only halfway
+* Class E - throwing the hips to the front
+
+## Get Data
+```{r get data}
+library(ggplot2)
+library(caret)
+library(gbm)
+library(randomForest)
+setwd("C:/Coursera/Practical ML")
+training <- read.csv("pml-training.csv", na.strings=c("#DIV/0!"), row.names = 1)
+validation <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!"), row.names = 1)
+
+#Remove columns with more than 20% of NA or "" values
+treshold <- dim(training)[1] * 0.20
+Columns_keep <- !apply(training, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+
+training <- training[, Columns_keep]
+
+#Remove columns with zero variance
+Columns_ZeroVar <- nearZeroVar(training, saveMetrics = TRUE)
+
+training <- training[, Columns_ZeroVar$nzv==FALSE]
+
+training$classe = factor(training$classe)
+
+```
+
+## Data Partitioning
+
+```{r Data Partitioning}
+set.seed(127)
+Intraining <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+training <- training[Intraining, ]
+testing <- training[-Intraining, ]
+```
+
+## Model building
+
+For this project I’ll use 3 differnt model algorithms and then look to see whih provides the best out-of-sample accuracty. The three model types I’m going to test are:
+
+Decision trees with CART (rpart)
+Stochastic gradient boosting trees (gbm)
+Random forest decision trees (rf)
+
+```{r models}
+fitControl <- trainControl(method='cv', number = 5)
+
+model_rpart <- train(
+  classe ~ ., 
+  data=training,
+  trControl=fitControl,
+  method='rpart'
+  
+)
+
+model_gbm <- train(
+  classe ~ ., 
+  data=training,
+  trControl=fitControl,
+  method='gbm'
+)
+
+model_rf <- train(
+  classe ~ ., 
+  data=training,
+  trControl=fitControl,
+  method='rf',
+  ntree=250
+)
+```
+
+
+
+## Model Assessment (Out of sample error)
+
+```{r out of sample error}
+predRPART <- predict(model_rpart, newdata=testing)
+cmRPART <- confusionMatrix(predRPART, testing$classe)
+predGBM <- predict(model_gbm, newdata=testing)
+cmGBM <- confusionMatrix(predGBM, testing$classe)
+predRF <- predict(model_rf, newdata=testing)
+cmRF <- confusionMatrix(predRF, testing$classe)
+AccuracyResults <- data.frame(
+  Model = c('RPART', 'GBM', 'RF'),
+  Accuracy = rbind(cmRPART$overall[1], cmGBM$overall[1], cmRF$overall[1])
+)
+print(AccuracyResults)
+```
+Based on an assessment of these 3 model fits and out-of-sample results, it looks like both gradient boosting and random forests outperform the RPART model, with random forests being slightly more accurate. 
+
+
+## Feature Importance
+```{r feature importance}
+varImpObj <- varImp(model_rf)
+plot(varImpObj, main = "Importance of Top 40 Variables", top = 10)
+```
+
+
+## Prediction
+As a last step in the project, I’ll use the validation data sample (‘pml-testing.csv’) to predict a classe for each of the 20 observations based on the other information we know about these observations contained in the validation sample.
+```{r prediction}
+predValidation <- predict(model_rf, newdata=validation)
+ValidationPredictionResults <- data.frame(
+  problem_id=validation$problem_id,
+  predicted=predValidation
+)
+print(ValidationPredictionResults)
+```
+
+
+
+##Conclusion
+Based on the data available, I am able to fit a reasonably sound model with a high degree of accuracy in predicting out of sample observations. One assumption that I used in this work that could be relaxed in future work would be to remove the section of data preparation where I limit features to those that are non-zero in the validation sample. The random forest model with cross-validation produces a surprisingly accurate model that is sufficient for predictive analytics.
+
